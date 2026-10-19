@@ -25,7 +25,17 @@ export async function POST(request: Request) {
   if (monthError || !month) return Response.json({ error: "No se pudo guardar el mes." }, { status: 400 });
   if (items.length) {
     const totalIncome = monthData.income_15 + monthData.income_30 + monthData.bonus_income;
-    const rows = items.map(item => ({ ...item, user_id: user.id, budget_month_id: month.id, percent: totalIncome > 0 ? Math.round(item.amount / totalIncome * 10000) / 100 : 0 }));
+    const [startYear, startMonth] = monthData.month.slice(0, 7).split("-").map(Number);
+    const lastDay = new Date(Date.UTC(startYear, startMonth, 0)).getUTCDate();
+    const endDate = `${monthData.month.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+    const { data: payments, error: paymentsError } = await supabase.from("debt_payments").select("amount").eq("user_id", user.id).eq("status", "pendiente").gte("due_date", monthData.month).lte("due_date", endDate);
+    if (paymentsError) return Response.json({ error: "No se pudo calcular el presupuesto de cuotas." }, { status: 400 });
+    const scheduledDebtAmount = (payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const { data: debtCategory, error: categoryError } = await supabase.from("categories").upsert({ user_id: user.id, name: "Cuotas de deudas", group_name: "Deudas", archived: false }, { onConflict: "user_id,name" }).select("id").single();
+    if (categoryError || !debtCategory) return Response.json({ error: "No se pudo preparar la categoría de deudas." }, { status: 400 });
+    const customItems = items.filter(item => item.category_id !== debtCategory.id);
+    const rows = customItems.map(item => ({ ...item, user_id: user.id, budget_month_id: month.id, percent: totalIncome > 0 ? Math.round(item.amount / totalIncome * 10000) / 100 : 0 }));
+    rows.push({ category_id: debtCategory.id, user_id: user.id, budget_month_id: month.id, amount: scheduledDebtAmount, percent: totalIncome > 0 ? Math.round(scheduledDebtAmount / totalIncome * 10000) / 100 : 0, pay_source: "Cada quincena" as const });
     const { error } = await supabase.from("budget_items").upsert(rows, { onConflict: "budget_month_id,category_id" });
     if (error) return Response.json({ error: "El mes se guardó, pero no se pudieron guardar las asignaciones." }, { status: 400 });
   }

@@ -43,10 +43,12 @@ create table if not exists public.transactions (
 );
 create table if not exists public.debts (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade, name text not null, creditor text,
-  debt_type public.debt_type not null, installment numeric(14,2) not null check (installment >= 0), remaining_payments integer not null check (remaining_payments >= 0),
+  debt_type public.debt_type not null, total_amount numeric(14,2) not null default 0 check (total_amount >= 0), initial_amount numeric(14,2) not null default 0 check (initial_amount >= 0), installment numeric(14,2) not null check (installment >= 0), remaining_payments integer not null check (remaining_payments >= 0),
   pay_source public.pay_source not null default 'Cada quincena', starts_on date, next_due_date date, interest_rate numeric(7,4) check (interest_rate is null or interest_rate >= 0), notes text,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
+alter table public.debts add column if not exists total_amount numeric(14,2) not null default 0 check (total_amount >= 0);
+alter table public.debts add column if not exists initial_amount numeric(14,2) not null default 0 check (initial_amount >= 0);
 create table if not exists public.debt_payments (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
   debt_id uuid not null references public.debts(id) on delete cascade, due_date date not null, amount numeric(14,2) not null check (amount >= 0),
@@ -104,7 +106,7 @@ create or replace function public.handle_new_user() returns trigger language plp
 begin
   insert into public.profiles(id, display_name) values(new.id, coalesce(new.raw_user_meta_data->>'name','')) on conflict(id) do nothing;
   insert into public.categories(user_id,name,group_name) values
-    (new.id,'Vivienda','Necesidades'),(new.id,'Alimentación','Necesidades'),(new.id,'Transporte','Necesidades'),(new.id,'Servicios','Necesidades'),(new.id,'Salud','Necesidades'),(new.id,'Salidas y ocio','Deseos'),(new.id,'Comer fuera','Deseos'),(new.id,'Compras','Deseos'),(new.id,'Suscripciones','Deseos'),(new.id,'Imprevistos','Necesidades'),(new.id,'Fondo de emergencia','Ahorro'),(new.id,'Metas','Ahorro'),(new.id,'Inversión','Ahorro') on conflict(user_id,name) do nothing;
+    (new.id,'Vivienda','Necesidades'),(new.id,'Alimentación','Necesidades'),(new.id,'Transporte','Necesidades'),(new.id,'Servicios','Necesidades'),(new.id,'Salud','Necesidades'),(new.id,'Salidas y ocio','Deseos'),(new.id,'Comer fuera','Deseos'),(new.id,'Compras','Deseos'),(new.id,'Suscripciones','Deseos'),(new.id,'Imprevistos','Necesidades'),(new.id,'Fondo de emergencia','Ahorro'),(new.id,'Metas','Ahorro'),(new.id,'Inversión','Ahorro'),(new.id,'Cuotas de deudas','Deudas') on conflict(user_id,name) do nothing;
   return new;
 end $$;
 drop trigger if exists on_auth_user_created on auth.users;
